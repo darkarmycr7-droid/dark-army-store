@@ -47,13 +47,13 @@ PostgreSQL, Nginx and persistent uploads via `docker-compose.yml` and [docs/DEPL
 |---|---|---|
 | Storefront | `/` | Catalog, cart, checkout, order tracking, bilingual EN/AR |
 | Customer accounts | `/account` | Sign-up with email verification, orders, wishlist, addresses |
-| Admin | `/admin` | Dashboard, products, orders, customers, settings, users |
-| Inventory | `/admin/inventory` | Weighted-average cost ledger, stock moves, warehouses, low-stock |
+| Admin | `/admin` | App launcher — the ERP home, an Odoo-style grid over the 21 sections below |
+| Inventory | `/admin/stock` | Weighted-average cost ledger, stock moves, warehouses, low-stock |
 | Purchasing | `/admin/purchases` | Vendors, purchase orders, receipts that cost stock in |
 | Point of sale | `/pos` | Register per branch, cashier PIN login, opening control, till sessions |
 | Employees | `/admin/employees` | List + kanban, full employee form, photos, departments, job positions |
 | Attendance | `/admin/attendance` | Check in / out, kiosk mode, work schedules, overnight shifts |
-| Time off | `/admin/time-off` | Leave types, allocations, requests, balances |
+| Time off | `/admin/timeoff` | Leave types, allocations, requests, balances |
 | Accounting | `/admin/accounting` | Journals, double-entry ledger, chart of accounts, partner ledger, aged balances |
 
 The accounting ledger is append-only: posted entries are never edited, only
