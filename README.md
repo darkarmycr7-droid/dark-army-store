@@ -49,7 +49,9 @@ overnight shifts stay on that day.
 - SEO: metadata, sitemap.xml, robots.txt, JSON-LD product schema
 
 ## Admin panel (`/admin`)
-Sign in at **http://localhost:3200/admin/login** with `admin@darkarmy.store` / `admin123`.
+Sign in at **http://localhost:3200/admin/login** with `admin@darkarmy.store` / `admin123`
+— the seeded local account. **Change it in Admin → Settings before the app is reachable
+by anyone but you.** A production build never prefills or displays these.
 - **Dashboard:** revenue, orders, customers, products, inventory value, potential profit, 14-day sales chart, low-stock list, top products, recent orders
 - **Products:** searchable table, create/edit modal with **image upload** (local disk → S3-ready), cost/price/margin, stock + low-stock alert, featured/best-seller/active flags, delete (soft-deletes if referenced by an order)
 - **Orders:** filter by status, search, detail drawer to update status (PENDING→…→DELIVERED), assign a driver, auto-restock on cancel/return, full status history timeline
@@ -146,7 +148,7 @@ link you can send to anyone. The link changes each run. Requires `cloudflared`
 ### Seeded data
 - 6 categories, 16 products across an "all-in-one" catalog
 - Coupon **`WELCOME10`** — 10% off, min KD 5
-- Admin user (for the upcoming admin panel): `admin@darkarmy.store` / `admin123`
+- Admin user: `admin@darkarmy.store` / `admin123` — **local seed only, change it before deploying**
 
 ### Sandbox payments
 Choose **Card (Sandbox)** at checkout. Card number ending in an **even** digit → approved,

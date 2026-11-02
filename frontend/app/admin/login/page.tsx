@@ -5,11 +5,19 @@ import { useRouter } from 'next/navigation';
 import { Shield, Loader2, KeyRound, ArrowLeft } from 'lucide-react';
 import { adminApi, adminToken } from '@/lib/adminApi';
 
+/**
+ * The seeded admin login, filled in for you while developing so you aren't
+ * retyping it a hundred times a day. A production build starts empty and shows
+ * no hint — otherwise a deployed store hands its own credentials to whoever
+ * opens the page.
+ */
+const DEV_LOGIN = process.env.NODE_ENV !== 'production';
+
 export default function AdminLoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>('login');
-  const [email, setEmail] = useState('admin@darkarmy.store');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState(DEV_LOGIN ? 'admin@darkarmy.store' : '');
+  const [password, setPassword] = useState(DEV_LOGIN ? 'admin123' : '');
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [devCode, setDevCode] = useState<string | undefined>();
@@ -90,7 +98,9 @@ export default function AdminLoginPage() {
             <button disabled={loading} className="btn-primary mt-4 w-full !py-3">
               {loading ? <Loader2 size={18} className="animate-spin" /> : 'Sign in'}
             </button>
-            <p className="mt-3 text-center text-xs text-slate-400">Demo: admin@darkarmy.store / admin123</p>
+            {DEV_LOGIN && (
+              <p className="mt-3 text-center text-xs text-slate-400">Demo: admin@darkarmy.store / admin123</p>
+            )}
           </form>
         )}
 
