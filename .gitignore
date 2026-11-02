@@ -42,3 +42,6 @@ npm-debug.log*
 Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+# Claude's working notes: local only, and they name a real client.
+CLAUDE.md
