@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Backend (typecheck + build)
+    runs-on: ubuntu-latest
+    env:
+      # Prisma needs a datasource URL to read the schema. No database is
+      # created here — nothing in this job connects to one.
+      DATABASE_URL: file:./dev.db
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Validate the Prisma schema
+        run: npx prisma validate
+      - name: Generate the Prisma client
+        run: npx prisma generate
+      - run: npm run typecheck
+      - run: npm run build
+
+  frontend:
+    name: Frontend (typecheck)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # Typecheck, not `next build`: the server components fetch from the API at
+      # render time, so a production build needs a running backend and a seeded
+      # database. That belongs in a deploy job, not in a code check.
+      - run: npm run typecheck

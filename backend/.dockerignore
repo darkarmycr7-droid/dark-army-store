@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+*.db
+*.db-journal
+prisma/dev.db*
+backups
+uploads
+.git
+npm-debug.log

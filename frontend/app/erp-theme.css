@@ -1,0 +1,287 @@
+/* ==========================================================================
+   ERP theme — the admin + till, modelled on the reference Odoo instance.
+
+   Scoped to `.erp` so the customer storefront keeps its own light identity and
+   is never touched by these rules.
+
+   Dark is the default because the reference runs dark; `data-erp-theme="light"`
+   on <html> switches it. Colours are stored as SPACE-SEPARATED RGB CHANNELS so
+   Tailwind can apply opacity modifiers (bg-odoo-primary/25) against them — see
+   tailwind.config.ts, where each odoo-* colour is
+   `rgb(var(--erp-x) / <alpha-value>)`. Never put a hex value in this block.
+
+   Metrics are measured from the running reference: 14px base, 4px radius,
+   46px navbar, 41px list rows, 33px buttons, 16px form-sheet padding.
+   ========================================================================== */
+
+.erp {
+  /* Dark — the reference instance's own palette */
+  --erp-ground: 27 29 38;        /* #1B1D26 */
+  --erp-surface: 38 42 54;       /* #262A36 */
+  --erp-raised: 46 51 65;        /* #2E3341 */
+  --erp-line: 60 62 75;          /* #3C3E4B */
+  --erp-ink: 228 228 228;        /* #E4E4E4 */
+  --erp-dim: 155 160 176;        /* #9BA0B0 */
+  --erp-faint: 111 116 132;      /* #6F7484 */
+  --erp-primary: 107 62 102;     /* #6B3E66 */
+  --erp-primary-hi: 131 80 125;  /* #83507D */
+  --erp-lift: 192 139 185;       /* #C08BB9 */
+  --erp-ok: 29 201 89;
+  --erp-warn: 233 157 0;
+  --erp-bad: 184 50 50;
+  --erp-info: 106 181 251;
+  --erp-scroll: 69 73 86;
+  /* Tint used for hover states — light on dark, dark on light */
+  --erp-hover: 255 255 255;
+  --erp-hover-a: 0.06;
+
+  background-color: rgb(var(--erp-ground));
+  color: rgb(var(--erp-ink));
+  font-size: 14px;
+  min-height: 100vh;
+}
+
+/* Light — a proper light ERP palette, not an inversion. The aubergine primary
+   is kept because it reads correctly on both grounds. */
+[data-erp-theme='light'] .erp {
+  --erp-ground: 244 245 247;     /* #F4F5F7 */
+  --erp-surface: 255 255 255;
+  --erp-raised: 237 239 242;     /* #EDEFF2 */
+  --erp-line: 214 218 224;       /* #D6DAE0 */
+  --erp-ink: 33 37 41;           /* #212529 */
+  --erp-dim: 100 108 120;
+  --erp-faint: 138 145 156;
+  --erp-primary: 107 62 102;
+  --erp-primary-hi: 88 50 84;
+  --erp-lift: 122 70 115;        /* darker so it reads on white */
+  --erp-ok: 21 145 66;
+  --erp-warn: 176 118 0;
+  --erp-bad: 178 45 45;
+  --erp-info: 25 118 210;
+  --erp-scroll: 190 196 204;
+  --erp-hover: 0 0 0;
+  --erp-hover-a: 0.045;
+}
+
+.erp ::placeholder { color: rgb(var(--erp-faint)); }
+
+.erp *::-webkit-scrollbar { width: 10px; height: 10px; }
+.erp *::-webkit-scrollbar-track { background-color: rgb(var(--erp-ground)); }
+.erp *::-webkit-scrollbar-thumb { background-color: rgb(var(--erp-scroll)); border-radius: 5px; }
+.erp *::-webkit-scrollbar-thumb:hover { background-color: rgb(var(--erp-dim)); }
+
+/* ---- Component overrides inside the ERP scope ---- */
+.erp .card {
+  /* !important because Tailwind's own .card sets bg-white; without it Chrome
+     does not re-resolve this rule when the theme variables change. */
+  background-color: rgb(var(--erp-surface)) !important;
+  border: 1px solid rgb(var(--erp-line)) !important;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.erp .input {
+  background-color: rgb(var(--erp-ground)) !important;
+  border: 1px solid rgb(var(--erp-line)) !important;
+  border-radius: 4px;
+  color: rgb(var(--erp-ink)) !important;
+  padding: 5px 10px;
+  font-size: 14px;
+  transition: border-color .12s;
+}
+.erp .input:focus {
+  border-color: rgb(var(--erp-primary-hi));
+  box-shadow: 0 0 0 2px rgb(var(--erp-primary) / .35);
+}
+.erp .input:disabled { background-color: rgb(var(--erp-raised)); color: rgb(var(--erp-faint)); }
+.erp select.input option { background-color: rgb(var(--erp-surface)); color: rgb(var(--erp-ink)); }
+
+.erp .label {
+  color: rgb(var(--erp-dim));
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 3px;
+}
+
+.erp .btn-primary,
+.erp .btn-ghost {
+  height: 33px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: none;
+}
+.erp .btn-primary {
+  background-color: rgb(var(--erp-primary)) !important;
+  border: 1px solid rgb(var(--erp-primary)) !important;
+  color: #fff !important;
+}
+.erp .btn-primary:hover { background-color: rgb(var(--erp-primary-hi)); border-color: rgb(var(--erp-primary-hi)); }
+.erp .btn-ghost {
+  background-color: transparent !important;
+  border: 1px solid rgb(var(--erp-line)) !important;
+  color: rgb(var(--erp-ink)) !important;
+}
+.erp .btn-ghost:hover { background-color: rgb(var(--erp-raised)); }
+
+/* ---- Tables: the reference's list-view metrics ---- */
+.erp table { font-size: 14px; }
+.erp thead tr { background-color: rgb(var(--erp-ground)); }
+.erp thead th {
+  height: 40px;
+  padding: 8px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  color: rgb(var(--erp-dim));
+  border-bottom: 1px solid rgb(var(--erp-line));
+  background-color: rgb(var(--erp-ground));
+}
+.erp tbody td {
+  height: 41px;
+  padding: 8px 6px;
+  color: rgb(var(--erp-ink)) !important;
+  border-bottom: 1px solid rgb(var(--erp-line));
+}
+.erp tbody tr:hover { background-color: rgb(var(--erp-hover) / var(--erp-hover-a)); }
+
+/* Neutralise the storefront's light utility classes inside the ERP */
+.erp .bg-white { background-color: rgb(var(--erp-surface)) !important; }
+.erp .bg-slate-50,
+.erp .bg-slate-100 { background-color: rgb(var(--erp-raised)) !important; }
+.erp .text-slate-500,
+.erp .text-slate-600 { color: rgb(var(--erp-dim)) !important; }
+.erp .text-slate-400 { color: rgb(var(--erp-faint)) !important; }
+.erp .text-slate-800,
+.erp .text-ink { color: rgb(var(--erp-ink)) !important; }
+.erp .border-slate-100,
+.erp .border-slate-200,
+.erp .border-slate-300 { border-color: rgb(var(--erp-line)) !important; }
+.erp .divide-slate-100 > * + * { border-color: rgb(var(--erp-line)) !important; }
+.erp .hover\:bg-slate-50:hover,
+.erp .hover\:bg-slate-100:hover { background-color: rgb(var(--erp-raised)) !important; }
+.erp .shadow-sm, .erp .shadow-card, .erp .shadow-xl { box-shadow: none !important; }
+
+/* Modal panels sit on the raised surface */
+.erp .fixed.inset-0 > form,
+.erp .fixed.inset-0 > div {
+  background-color: rgb(var(--erp-surface));
+  color: rgb(var(--erp-ink));
+  border: 1px solid rgb(var(--erp-line));
+  border-radius: 4px;
+}
+
+/* ==========================================================================
+   App launcher motion
+
+   Tiles deal themselves in on load (staggered by an inline --i on each tile),
+   then respond to the pointer. Every animation ENDS in the resting state, so a
+   screenshot, a reload with motion disabled, or a paused tab all show the full
+   grid — nothing is parked invisible waiting for an event.
+   ========================================================================== */
+
+@keyframes erpTileIn {
+  from { opacity: 0; transform: translateY(16px) scale(.88); }
+  60%  { opacity: 1; }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes erpFadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* A light sweeps across the icon once on hover. */
+@keyframes erpSheen {
+  from { transform: translateX(-130%) skewX(-18deg); }
+  to   { transform: translateX(230%) skewX(-18deg); }
+}
+
+.erp .app-group {
+  animation: erpFadeUp .32s ease backwards;
+  animation-delay: calc(var(--g, 0) * 70ms);
+}
+
+.erp .app-tile {
+  animation: erpTileIn .46s cubic-bezier(.22, 1, .36, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 38ms);
+}
+
+.erp .app-tile .tile-icon {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform .3s cubic-bezier(.22, 1, .36, 1),
+    box-shadow .3s ease;
+  will-change: transform;
+}
+
+/* The sweep lives in a pseudo-element so it costs nothing until hovered. */
+.erp .app-tile .tile-icon::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / .45), transparent);
+  transform: translateX(-130%) skewX(-18deg);
+}
+
+.erp .app-tile:hover .tile-icon,
+.erp .app-tile:focus-visible .tile-icon {
+  transform: translateY(-6px) scale(1.08);
+  box-shadow: 0 16px 26px -10px rgb(0 0 0 / .6);
+}
+.erp .app-tile:hover .tile-icon::after,
+.erp .app-tile:focus-visible .tile-icon::after {
+  animation: erpSheen .62s ease-out;
+}
+
+/* Pressed: settle back down, fast, so the click feels physical. */
+.erp .app-tile:active .tile-icon {
+  transform: translateY(-1px) scale(.97);
+  transition-duration: .09s;
+}
+
+.erp .app-tile .tile-glyph {
+  transition: transform .38s cubic-bezier(.34, 1.56, .64, 1);
+}
+.erp .app-tile:hover .tile-glyph,
+.erp .app-tile:focus-visible .tile-glyph {
+  transform: rotate(-7deg) scale(1.12);
+}
+
+.erp .app-tile .tile-label {
+  transition: color .2s ease, transform .3s cubic-bezier(.22, 1, .36, 1);
+}
+.erp .app-tile:hover .tile-label,
+.erp .app-tile:focus-visible .tile-label {
+  color: rgb(var(--erp-lift));
+  transform: translateY(2px);
+}
+
+.erp .app-tile:focus-visible { outline: none; }
+
+/* Shadows have to be lighter on a white ground or they read as smudges. */
+[data-erp-theme='light'] .erp .app-tile:hover .tile-icon,
+[data-erp-theme='light'] .erp .app-tile:focus-visible .tile-icon {
+  box-shadow: 0 16px 26px -12px rgb(0 0 0 / .35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .erp .app-group,
+  .erp .app-tile { animation: none; }
+  .erp .app-tile .tile-icon,
+  .erp .app-tile .tile-glyph,
+  .erp .app-tile .tile-label { transition: none; }
+  .erp .app-tile:hover .tile-icon,
+  .erp .app-tile:focus-visible .tile-icon,
+  .erp .app-tile:active .tile-icon,
+  .erp .app-tile:hover .tile-glyph,
+  .erp .app-tile:focus-visible .tile-glyph,
+  .erp .app-tile:hover .tile-label,
+  .erp .app-tile:focus-visible .tile-label { transform: none; }
+  .erp .app-tile .tile-icon::after { animation: none; }
+}

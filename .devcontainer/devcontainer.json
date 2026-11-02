@@ -1,0 +1,25 @@
+{
+  "name": "Dark-Army Store",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20-bookworm",
+
+  // Installs both apps and builds a fresh seeded SQLite database, so the
+  // Codespace comes up with a working store rather than an empty shell.
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "forwardPorts": [3200, 4000],
+  "portsAttributes": {
+    "3200": { "label": "Store + Admin", "onAutoForward": "openPreview" },
+    "4000": { "label": "API", "onAutoForward": "silent" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Prisma.prisma",
+        "bradlc.vscode-tailwindcss",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}

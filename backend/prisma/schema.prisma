@@ -1,0 +1,1271 @@
+// Dark-Army Store — e-commerce schema
+// Dev: SQLite (zero-config). Production: switch provider to "postgresql".
+// NOTE: SQLite has no native enums, so status fields are String + documented
+// allowed values. They map 1:1 to Postgres if/when you migrate.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Catalog ----------
+
+model Category {
+  id          Int        @id @default(autoincrement())
+  name        String
+  nameAr      String?
+  slug        String     @unique
+  description String?
+  imageUrl    String?
+  parentId    Int?
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryTree")
+  sortOrder   Int        @default(0)
+  isActive    Boolean    @default(true)
+  products    Product[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Brand {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  slug      String    @unique
+  logoUrl   String?
+  products  Product[]
+  createdAt DateTime  @default(now())
+}
+
+model Product {
+  id            Int            @id @default(autoincrement())
+  name          String
+  nameAr        String?
+  slug          String         @unique
+  sku           String         @unique
+  barcode       String?        @unique
+  description   String?
+  descriptionAr String?
+  specs         String?        // JSON string: [{ "key": "...", "value": "..." }]
+  categoryId    Int?
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  brandId       Int?
+  brand         Brand?         @relation(fields: [brandId], references: [id])
+  costPrice     Decimal        @default(0)
+  // Weighted-average landed cost, maintained by goods receipts + adjustments
+  // (see services/inventory.service.ts). costPrice stays the manual/standard
+  // cost; reports prefer avgCost when it is > 0.
+  avgCost       Decimal        @default(0)
+  sellingPrice  Decimal
+  compareAtPrice Decimal?      // "was" price for showing discounts
+  stockQty      Int            @default(0)
+  lowStockAlert Int            @default(5)
+  unit          String         @default("PCS")
+  isActive      Boolean        @default(true)
+  isFeatured    Boolean        @default(false)
+  isBestSeller  Boolean        @default(false)
+  soldCount     Int            @default(0)
+  ratingAvg     Float          @default(0)
+  ratingCount   Int            @default(0)
+  images        ProductImage[]
+  orderItems    OrderItem[]
+  reviews       Review[]
+  poItems       PurchaseOrderItem[]
+  soLines       SalesOrderLine[]
+  movements     StockMovement[]
+  warehouseStock WarehouseStock[]
+  transferLines StockTransferLine[]
+  boms          BillOfMaterials[]   @relation("BomProduct")
+  bomLines      BomLine[]           @relation("BomComponent")
+  moOrders      ManufacturingOrder[] @relation("MoProduct")
+  moComponents  MoComponent[]       @relation("MoComponentProduct")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([categoryId])
+  @@index([slug])
+}
+
+model Review {
+  id         Int      @id @default(autoincrement())
+  productId  Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  rating     Int      // 1..5
+  title      String?
+  body       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([productId, customerId])
+  @@index([productId])
+}
+
+model ProductImage {
+  id        Int     @id @default(autoincrement())
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  alt       String?
+  sortOrder Int     @default(0)
+}
+
+// ---------- Customers ----------
+
+model Customer {
+  id           Int       @id @default(autoincrement())
+  /// Master contact record. Customer keeps the portal login + loyalty.
+  partnerId    Int?
+  partner      Partner?  @relation(fields: [partnerId], references: [id])
+  name         String
+  email        String    @unique
+  phone        String?
+  passwordHash String
+  emailVerified Boolean  @default(false)
+  phoneVerified Boolean  @default(false)
+  addresses    Address[]
+  orders       Order[]
+  wishlist     WishlistItem[]
+  reviews      Review[]
+  loyaltyPoints Int      @default(0)
+  loyaltyTxns  LoyaltyTransaction[]
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Address {
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label      String?  // Home / Work
+  fullName   String
+  phone      String
+  area       String   // Kuwait governorate / area
+  block      String?
+  street     String?
+  building   String?
+  floor      String?
+  notes      String?
+  isDefault  Boolean  @default(false)
+  orders     Order[]
+}
+
+model WishlistItem {
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  productId  Int
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, productId])
+}
+
+// ---------- Orders ----------
+// status:   PENDING | CONFIRMED | PROCESSING | SHIPPED | DELIVERED | CANCELLED | RETURNED
+// payStatus: UNPAID | PAID | REFUNDED | FAILED
+// payMethod: COD | STUB | KNET | VISA | MASTERCARD | APPLE_PAY | GOOGLE_PAY
+
+model Order {
+  id              Int         @id @default(autoincrement())
+  orderNumber     String      @unique
+  trackingNumber  String      @unique
+  customerId      Int?
+  customer        Customer?   @relation(fields: [customerId], references: [id])
+  addressId       Int?
+  address         Address?    @relation(fields: [addressId], references: [id])
+
+  // Snapshot of contact + shipping (supports guest checkout).
+  // Nullable because a POS walk-in sale has no email, phone or delivery address.
+  contactName     String
+  contactEmail    String?
+  contactPhone    String?
+  shipArea        String?
+  shipBlock       String?
+  shipStreet      String?
+  shipBuilding    String?
+  shipNotes       String?
+
+  // ONLINE (storefront) | POS (till). Kept so revenue can be split by channel.
+  channel         String      @default("ONLINE")
+  posSessionId    Int?
+  posSession      PosSession? @relation(fields: [posSessionId], references: [id])
+  posPayments     PosPayment[]
+
+  status          String      @default("PENDING")
+  payStatus       String      @default("UNPAID")
+  payMethod       String
+  deliveryMethod  String      @default("STANDARD")
+
+  subtotal        Decimal    
+  discount        Decimal     @default(0)
+  shipping        Decimal     @default(0)
+  tax             Decimal     @default(0)
+  total           Decimal    
+  couponCode      String?
+  pointsEarned    Int         @default(0)
+  pointsRedeemed  Int         @default(0)
+
+  items           OrderItem[]
+  events          OrderEvent[]
+  payment         Payment?
+  driverName      String?
+  placedAt        DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([status])
+  @@index([customerId])
+  @@index([channel])
+}
+
+// ---------- Point of sale ----------
+// Cash control for the till. Every money movement below is a stored row rather
+// than a computed figure, so the accounting module can post them as journal
+// entries without re-deriving history.
+
+/// A till. The reference runs 25 of these across 11 branches ("Al-Rai 1",
+/// "Khiran 2", "Al-Rai Gift 3"), each tied to the branch whose stock it sells.
+/// A register is the long-lived thing; a PosSession is one shift on it.
+model PosRegister {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  /// Branch grouping for the dashboard. The reference derives this from the
+  /// picking type — nine registers share "RAI: PoS Orders".
+  branch      String?
+  warehouseId Int?
+  warehouse   Warehouse?   @relation(fields: [warehouseId], references: [id])
+  /// When true the till demands a counted opening float before it will open.
+  /// Every register in the reference has this on.
+  cashControl Boolean      @default(true)
+  sequence    Int          @default(10)
+  active      Boolean      @default(true)
+  sessions    PosSession[]
+  /// The cash journal this till posts into, if one is set up for it.
+  journal     Journal?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([active])
+}
+
+// status: OPEN | CLOSED
+model PosSession {
+  id             Int           @id @default(autoincrement())
+  sessionNumber  String        @unique
+  /// Kept as text as well as a relation: a session is history, and renaming or
+  /// archiving a register must not rewrite what the drawer was called that day.
+  registerName   String        @default("Main Register")
+  registerId     Int?
+  register       PosRegister?  @relation(fields: [registerId], references: [id])
+  /// The employee who signed in at the till, verified by their PIN.
+  cashierId      Int?
+  cashier        Employee?     @relation(fields: [cashierId], references: [id])
+  openingNote    String?
+  /// The shop this till sells from — stock leaves THIS warehouse, not central.
+  warehouseId    Int?
+  warehouse      Warehouse?    @relation(fields: [warehouseId], references: [id])
+  openedByEmail  String?
+  closedByEmail  String?
+  openedAt       DateTime      @default(now())
+  closedAt       DateTime?
+  openingFloat   Decimal       @default(0)
+  closingCounted Decimal?      // cash actually counted in the drawer at close
+  expectedCash   Decimal?      // float + cash tenders + ins - outs - cash refunds
+  variance       Decimal?      // counted - expected (negative = short)
+  status         String        @default("OPEN")
+  note           String?
+  orders         Order[]
+  payments       PosPayment[]
+  cashMoves      PosCashMove[]
+
+  @@index([status])
+}
+
+// One row per tender, so a sale can be split across cash + card.
+// method: CASH | KNET | CARD.  Refund tenders are stored as negative amounts.
+model PosPayment {
+  id        Int        @id @default(autoincrement())
+  orderId   Int
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sessionId Int
+  session   PosSession @relation(fields: [sessionId], references: [id])
+  method    String
+  amount    Decimal
+  reference String?
+  createdAt DateTime   @default(now())
+
+  @@index([sessionId])
+  @@index([orderId])
+}
+
+// Petty cash in/out of the drawer during a session. type: IN | OUT
+model PosCashMove {
+  id         Int        @id @default(autoincrement())
+  sessionId  Int
+  session    PosSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type       String
+  amount     Decimal
+  reason     String
+  actorEmail String?
+  createdAt  DateTime   @default(now())
+
+  @@index([sessionId])
+}
+
+model OrderItem {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id])
+  name      String   // snapshot
+  sku       String   // snapshot
+  imageUrl  String?
+  unitPrice Decimal
+  // Cost per unit at the moment of sale, so historical COGS / P&L does not
+  // drift when the product's cost changes later.
+  unitCost  Decimal  @default(0)
+  quantity  Int
+  lineTotal Decimal
+}
+
+model OrderEvent {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    String
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+model Payment {
+  id            Int      @id @default(autoincrement())
+  orderId       Int      @unique
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  method        String
+  status        String   @default("PENDING") // PENDING | PAID | FAILED | REFUNDED
+  amount        Decimal 
+  transactionId String?
+  rawResponse   String?  // JSON string from gateway
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ---------- Manufacturing ----------
+// Assemble finished goods from components. Value is preserved: components
+// leave stock at their average cost and the finished good enters at the
+// rolled-up total, so the Inventory account nets to zero and manufacturing
+// posts NO journal entry (see services/manufacturing.service.ts).
+
+model BillOfMaterials {
+  id        Int                  @id @default(autoincrement())
+  reference String               @unique // BOM-000001
+  productId Int
+  product   Product              @relation("BomProduct", fields: [productId], references: [id])
+  /// How many finished units one run of this BoM yields.
+  quantity  Int                  @default(1)
+  name      String?
+  isActive  Boolean              @default(true)
+  lines     BomLine[]
+  orders    ManufacturingOrder[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([productId])
+}
+
+model BomLine {
+  id          Int             @id @default(autoincrement())
+  bomId       Int
+  bom         BillOfMaterials @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  componentId Int
+  component   Product         @relation("BomComponent", fields: [componentId], references: [id])
+  /// Quantity needed to produce BillOfMaterials.quantity finished units.
+  quantity    Int
+  sequence    Int             @default(0)
+
+  @@index([bomId])
+}
+
+// state: DRAFT | CONFIRMED | DONE | CANCELLED
+model ManufacturingOrder {
+  id             Int              @id @default(autoincrement())
+  reference      String           @unique // MO-000001
+  productId      Int
+  product        Product          @relation("MoProduct", fields: [productId], references: [id])
+  bomId          Int?
+  bom            BillOfMaterials? @relation(fields: [bomId], references: [id])
+  /// Components are consumed from, and finished goods produced into, this one.
+  warehouseId    Int?
+  warehouse      Warehouse?       @relation(fields: [warehouseId], references: [id])
+  quantity       Int
+  producedQty    Int              @default(0)
+  state          String           @default("DRAFT")
+  /// Rolled-up cost per finished unit, set when production completes.
+  unitCost       Decimal          @default(0)
+  scheduledAt    DateTime?
+  doneAt         DateTime?
+  note           String?
+  createdByEmail String?
+  components     MoComponent[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([state])
+  @@index([productId])
+}
+
+model MoComponent {
+  id               Int                @id @default(autoincrement())
+  moId             Int
+  mo               ManufacturingOrder @relation(fields: [moId], references: [id], onDelete: Cascade)
+  productId        Int
+  product          Product            @relation("MoComponentProduct", fields: [productId], references: [id])
+  name             String             // snapshot
+  sku              String             // snapshot
+  quantityRequired Int
+  quantityConsumed Int                @default(0)
+  /// Cost per component unit at the moment it was consumed.
+  unitCost         Decimal            @default(0)
+
+  @@index([moId])
+}
+
+// ---------- Warehouses ----------
+// Central warehouse + branch shops. Product.stockQty remains the COMPANY-WIDE
+// total so every existing screen, report and the storefront keep working;
+// WarehouseStock holds the per-warehouse breakdown beneath it.
+//
+// Invariant: sum(WarehouseStock.quantity) + in-transit == Product.stockQty
+// In-transit is the quantity on transfers that have been sent but not received.
+
+// type: CENTRAL | SHOP
+model Warehouse {
+  id            Int              @id @default(autoincrement())
+  code          String           @unique // WH, SHOP1 …
+  name          String
+  nameAr        String?
+  type          String           @default("SHOP")
+  /// Exactly one warehouse is the default; everything unassigned lands here.
+  isDefault     Boolean          @default(false)
+  area          String?
+  address       String?
+  phone         String?
+  isActive      Boolean          @default(true)
+  stock         WarehouseStock[]
+  movements     StockMovement[]
+  transfersOut  StockTransfer[]  @relation("TransferFrom")
+  transfersIn   StockTransfer[]  @relation("TransferTo")
+  posSessions   PosSession[]
+  posRegisters  PosRegister[]
+  moOrders      ManufacturingOrder[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([isActive])
+}
+
+model WarehouseStock {
+  id          Int       @id @default(autoincrement())
+  warehouseId Int
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  productId   Int
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity    Int       @default(0)
+
+  @@unique([warehouseId, productId])
+  @@index([productId])
+}
+
+// Two-step move between warehouses so goods in transit are visible.
+// state: DRAFT | SENT | DONE | CANCELLED
+model StockTransfer {
+  id              Int                 @id @default(autoincrement())
+  reference       String              @unique // TR-000001
+  fromWarehouseId Int
+  fromWarehouse   Warehouse           @relation("TransferFrom", fields: [fromWarehouseId], references: [id])
+  toWarehouseId   Int
+  toWarehouse     Warehouse           @relation("TransferTo", fields: [toWarehouseId], references: [id])
+  state           String              @default("DRAFT")
+  note            String?
+  createdByEmail  String?
+  sentAt          DateTime?
+  receivedAt      DateTime?
+  lines           StockTransferLine[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([state])
+}
+
+model StockTransferLine {
+  id          Int           @id @default(autoincrement())
+  transferId  Int
+  transfer    StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  productId   Int
+  product     Product       @relation(fields: [productId], references: [id])
+  name        String        // snapshot
+  sku         String        // snapshot
+  quantity    Int
+  receivedQty Int           @default(0)
+
+  @@index([transferId])
+}
+
+// ---------- Purchasing & stock ----------
+// Single stock pool (multi-warehouse is deliberately out of scope) valued at
+// weighted-average landed cost. Stock only ever moves through
+// services/inventory.service.ts, which writes a StockMovement for every change.
+
+// paymentTerms: CASH | NET7 | NET15 | NET30
+model Supplier {
+  id           Int             @id @default(autoincrement())
+  /// Master contact record. Supplier keeps the purchasing-specific fields.
+  partnerId    Int?
+  partner      Partner?        @relation(fields: [partnerId], references: [id])
+  name         String
+  nameAr       String?
+  contactName  String?
+  phone        String?
+  email        String?
+  address      String?
+  paymentTerms String          @default("CASH")
+  /// Overseas suppliers are invoiced in their own currency and their goods
+  /// carry customs and clearance costs on import.
+  isInternational Boolean      @default(false)
+  currency     String          @default("KWD")
+  notes        String?
+  isActive     Boolean         @default(true)
+  purchaseOrders PurchaseOrder[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+// status: DRAFT | ORDERED | PARTIAL | RECEIVED | CANCELLED
+// shipping + otherCost are landed costs, allocated across received lines
+// pro-rata by line value when goods are received.
+model PurchaseOrder {
+  id             Int                 @id @default(autoincrement())
+  poNumber       String              @unique
+  supplierId     Int
+  supplier       Supplier            @relation(fields: [supplierId], references: [id])
+  status         String              @default("DRAFT")
+  reference      String?             // supplier invoice number
+  notes          String?
+  /// Goods value in the PO currency (see currency/exchangeRate below).
+  subtotal       Decimal             @default(0)
+  /// Currency the SUPPLIER invoices in, and KWD per 1 unit of it. The rate is
+  /// locked on the order and used at receipt; FX movement after that is not
+  /// revalued (out of scope).
+  currency       String              @default("KWD")
+  exchangeRate   Decimal             @default(1)
+  /// Landed costs, always in KWD — they are paid locally to freight agents,
+  /// customs and clearing agents, not to the overseas supplier.
+  shipping       Decimal             @default(0)
+  customsDuty    Decimal             @default(0)
+  clearanceFee   Decimal             @default(0)
+  insurance      Decimal             @default(0)
+  otherCost      Decimal             @default(0)
+  /// Landed costs already settled with those third parties.
+  landedPaid     Decimal             @default(0)
+  /// Goods (converted to KWD) + all landed costs.
+  total          Decimal             @default(0)
+  /// Settled against Accounts Payable via /purchase-orders/:id/payments.
+  amountPaid     Decimal             @default(0)
+  expectedAt     DateTime?
+  orderedAt      DateTime?
+  receivedAt     DateTime?
+  createdByEmail String?
+  items          PurchaseOrderItem[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([supplierId])
+  @@index([status])
+}
+
+model PurchaseOrderItem {
+  id              Int           @id @default(autoincrement())
+  purchaseOrderId Int
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId       Int
+  product         Product       @relation(fields: [productId], references: [id])
+  name            String        // snapshot
+  sku             String        // snapshot
+  unitCost        Decimal
+  quantity        Int
+  receivedQty     Int           @default(0)
+  lineTotal       Decimal
+
+  @@index([purchaseOrderId])
+}
+
+// qty is signed: + into stock, - out of stock.
+// type: PURCHASE | SALE | RETURN | REFUND_RESTOCK | ADJUSTMENT | INITIAL
+//     | TRANSFER_OUT | TRANSFER_IN  (a pair that nets to zero company-wide)
+//     | MANUFACTURE_OUT (components consumed) | MANUFACTURE_IN (goods produced)
+// refType: PO | SO | ORDER | ADJUSTMENT | PRODUCT | TRANSFER | MO
+model StockMovement {
+  id           Int        @id @default(autoincrement())
+  productId    Int
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Which warehouse the movement happened in. Null for pre-warehouse history.
+  warehouseId  Int?
+  warehouse    Warehouse? @relation(fields: [warehouseId], references: [id])
+  qty          Int
+  type         String
+  unitCost     Decimal  @default(0)
+  balanceAfter Int
+  avgCostAfter Decimal  @default(0)
+  refType      String?
+  refId        Int?
+  refLabel     String?  // PO-000123 / DA-12345678
+  reason       String?
+  actorEmail   String?
+  createdAt    DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([type])
+}
+
+// ---------- Contacts ----------
+// One master record per person or company, the way Odoo's res.partner works:
+// the same contact can be a customer, a supplier, or both. Customer (portal
+// login + loyalty) and Supplier point at it rather than duplicating identity.
+//
+// Archiving follows the Odoo convention: `active = false` hides a record
+// everywhere without deleting its history.
+
+model Partner {
+  id          Int      @id @default(autoincrement())
+  name        String
+  nameAr      String?
+  /// Internal reference / contact code.
+  ref         String?
+  isCompany   Boolean  @default(false)
+  /// Child contacts belong to a parent company.
+  parentId    Int?
+  parent      Partner? @relation("PartnerTree", fields: [parentId], references: [id])
+  children    Partner[] @relation("PartnerTree")
+  /// Odoo-style ranks: > 0 means the contact is used in that role.
+  customerRank Int     @default(0)
+  supplierRank Int     @default(0)
+  jobTitle    String?
+  email       String?
+  phone       String?
+  mobile      String?
+  website     String?
+  /// Tax / commercial registration number.
+  vat         String?
+  street      String?
+  street2     String?
+  area        String?   // Kuwait area / governorate
+  block       String?
+  building    String?
+  floor       String?
+  city        String?
+  country     String?   @default("Kuwait")
+  zip         String?
+  imageUrl    String?
+  comment     String?   // internal notes
+  paymentTerms String?  @default("CASH")
+  creditLimit Decimal   @default(0)
+  active      Boolean   @default(true)
+  tags        PartnerTagLink[]
+  journalLines JournalLine[]
+  messages    MailMessage[]
+  customers   Customer[]
+  suppliers   Supplier[]
+  salesOrders SalesOrder[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([name])
+  @@index([active])
+  @@index([customerRank])
+  @@index([supplierRank])
+}
+
+model PartnerTag {
+  id      Int              @id @default(autoincrement())
+  name    String           @unique
+  color   String           @default("slate")
+  links   PartnerTagLink[]
+}
+
+model PartnerTagLink {
+  partnerId Int
+  partner   Partner    @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  tagId     Int
+  tag       PartnerTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([partnerId, tagId])
+}
+
+// Chatter — the message/activity log Odoo attaches to every record.
+// type: COMMENT (a note someone wrote) | LOG (an automatic system entry)
+model MailMessage {
+  id         Int      @id @default(autoincrement())
+  /// Model the message is attached to, e.g. "partner", "order".
+  resModel   String
+  resId      Int
+  partnerId  Int?
+  partner    Partner? @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  type       String   @default("COMMENT")
+  subject    String?
+  body       String
+  authorName String?
+  authorEmail String?
+  createdAt  DateTime @default(now())
+
+  @@index([resModel, resId])
+}
+
+// ---------- Sales (B2B: quotation -> order -> delivery -> invoice) ----------
+// Modelled on Odoo's sale.order. Distinct from Order, which is the storefront
+// and POS document. Stock leaves on delivery (never on confirmation) and the
+// books are hit on invoice, so the two stay independent the way Odoo does it.
+
+// state: DRAFT (quotation) | SENT | SALE (confirmed) | DONE | CANCELLED
+// invoiceStatus: NO | TO_INVOICE | INVOICED
+// deliveryStatus: PENDING | PARTIAL | DONE
+model SalesOrder {
+  id              Int              @id @default(autoincrement())
+  name            String           @unique // SO-000001
+  partnerId       Int
+  partner         Partner          @relation(fields: [partnerId], references: [id])
+  state           String           @default("DRAFT")
+  dateOrder       DateTime         @default(now())
+  validityDate    DateTime?
+  confirmedAt     DateTime?
+  /// The customer's own purchase-order reference.
+  customerRef     String?
+  paymentTerms    String           @default("CASH")
+  salespersonEmail String?
+  note            String?
+  amountUntaxed   Decimal          @default(0)
+  amountTax       Decimal          @default(0)
+  amountTotal     Decimal          @default(0)
+  amountInvoiced  Decimal          @default(0)
+  amountPaid      Decimal          @default(0)
+  invoiceStatus   String           @default("NO")
+  deliveryStatus  String           @default("PENDING")
+  lines           SalesOrderLine[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([partnerId])
+  @@index([state])
+}
+
+model SalesOrderLine {
+  id           Int        @id @default(autoincrement())
+  orderId      Int
+  order        SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId    Int
+  product      Product    @relation(fields: [productId], references: [id])
+  name         String     // snapshot
+  sku          String     // snapshot
+  quantity     Int
+  deliveredQty Int        @default(0)
+  unitPrice    Decimal
+  /// Line discount as a percentage, the way Odoo's sale line works.
+  discount     Decimal    @default(0)
+  /// Cost of the units delivered, snapshotted as they leave stock.
+  unitCost     Decimal    @default(0)
+  lineTotal    Decimal
+  sequence     Int        @default(0)
+
+  @@index([orderId])
+}
+
+// ---------- Accounting ----------
+// Double-entry core. Business events post balanced JournalEntries through
+// services/accounting.service.ts; the financial statements are derived from
+// these lines, never recomputed from orders.
+
+// type: ASSET | LIABILITY | EQUITY | REVENUE | EXPENSE
+// Normal balance: ASSET/EXPENSE are debit; LIABILITY/EQUITY/REVENUE are credit.
+model Account {
+  id        Int           @id @default(autoincrement())
+  code      String        @unique // 1000, 4000, …
+  name      String
+  nameAr    String?
+  type      String
+  /// Contra accounts (e.g. Sales Discounts) sit on the opposite side of their type.
+  isContra  Boolean       @default(false)
+  /// Seeded accounts the posting rules depend on - cannot be deleted.
+  isSystem  Boolean       @default(false)
+  isActive  Boolean       @default(true)
+  lines     JournalLine[]
+  journalDefaults Journal[] @relation("JournalDefault")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([type])
+}
+
+// source: SALE | POS_SALE | REFUND | RECEIPT | SUPPLIER_PAYMENT | ORDER_PAYMENT
+//       | STOCK_ADJUSTMENT | CASH_MOVE | CASH_VARIANCE | OPENING | MANUAL | REVERSAL
+// status: POSTED | REVERSED
+model JournalEntry {
+  id             Int           @id @default(autoincrement())
+  entryNumber    String        @unique // JE-000001
+  date           DateTime      @default(now())
+  memo           String?
+  source         String        @default("MANUAL")
+  refType        String?       // ORDER | PO | SESSION | PRODUCT
+  refId          Int?
+  refLabel       String?
+  /// Guards against posting the same event twice; null for repeatable sources.
+  dedupeKey      String?       @unique
+  /// The book this entry is written in. Nullable only so existing rows could be
+  /// backfilled; every new entry is given one by the posting rules.
+  journalId      Int?
+  journal        Journal?      @relation(fields: [journalId], references: [id])
+  status         String        @default("POSTED")
+  reversesId     Int?          @unique
+  reverses       JournalEntry? @relation("Reversal", fields: [reversesId], references: [id])
+  reversedBy     JournalEntry? @relation("Reversal")
+  createdByEmail String?
+  lines          JournalLine[]
+  createdAt      DateTime      @default(now())
+
+  @@index([date])
+  @@index([source])
+  @@index([refType, refId])
+}
+
+model JournalLine {
+  id        Int          @id @default(autoincrement())
+  entryId   Int
+  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  accountId Int
+  account   Account      @relation(fields: [accountId], references: [id])
+  /// Who the line is with. Without this there is no Partner Ledger and no aged
+  /// balance — the two reports that answer "who owes us" and "who do we owe".
+  partnerId Int?
+  partner   Partner?     @relation(fields: [partnerId], references: [id])
+  debit     Decimal      @default(0)
+  credit    Decimal      @default(0)
+  memo      String?
+  /// Set on receivable/payable lines so an aged balance can bucket them.
+  dueDate   DateTime?
+
+  @@index([entryId])
+  @@index([accountId])
+  @@index([partnerId])
+}
+
+/// A journal — the book an entry is written in, and the unit the reference's
+/// accounting dashboard is built from. It runs 45: one sale, one purchase, a
+/// handful of bank, a cash journal per branch till, and several general
+/// journals for payroll, inventory valuation and corrections.
+///
+/// type: SALE | PURCHASE | CASH | BANK | GENERAL
+model Journal {
+  id     Int     @id @default(autoincrement())
+  code   String  @unique
+  name   String
+  nameAr String?
+  type   String  @default("GENERAL")
+
+  /// The counterpart account this journal moves money through — the bank or
+  /// cash account for BANK/CASH journals. Entries default to it.
+  defaultAccountId Int?
+  defaultAccount   Account? @relation("JournalDefault", fields: [defaultAccountId], references: [id])
+
+  /// A cash journal usually belongs to one till, so closing that till posts
+  /// into the right book. Optional: general journals have no register.
+  posRegisterId Int?         @unique
+  posRegister   PosRegister? @relation(fields: [posRegisterId], references: [id])
+
+  sequence Int     @default(10)
+  isActive Boolean @default(true)
+  /// Seeded journals the posting rules depend on — cannot be deleted.
+  isSystem Boolean @default(false)
+
+  entries   JournalEntry[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([type])
+  @@index([isActive])
+}
+
+// ---------- Marketing ----------
+// type: PERCENT | FIXED
+
+model Coupon {
+  id            Int       @id @default(autoincrement())
+  code          String    @unique
+  type          String    @default("PERCENT")
+  value         Decimal  
+  minSubtotal   Decimal   @default(0)
+  maxUses       Int?
+  usedCount     Int       @default(0)
+  expiresAt     DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+}
+
+// Loyalty points ledger. points is signed: + earned, - redeemed.
+// type: EARN | REDEEM | REVERSAL | ADJUST
+model LoyaltyTransaction {
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orderId    Int?
+  points     Int
+  type       String
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@index([customerId])
+}
+
+model NewsletterSignup {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
+
+// ---------- Staff / Admin ----------
+// role: ADMIN | MANAGER | STAFF
+
+model AdminUser {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("ADMIN")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// Homepage hero slides — fully admin-managed (text + background image).
+// align: left | center | right.  overlay = 0-80 dark scrim % for readability.
+model Banner {
+  id          Int      @id @default(autoincrement())
+  title       String
+  titleAr     String?
+  subtitle    String?
+  subtitleAr  String?
+  ctaLabel    String?
+  ctaLabelAr  String?
+  ctaHref     String   @default("/products")
+  imageUrl    String?  // background image; falls back to brand gradient if empty
+  align       String   @default("left")
+  overlay     Int      @default(40)
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+// Admin audit trail — who changed what, from where.
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    Int?
+  actorEmail String?
+  action     String   // e.g. "POST /products"
+  entity     String?  // resource group, e.g. "products"
+  entityId   String?
+  metadata   String?  // JSON snapshot (passwords stripped)
+  ip         String?
+  status     Int?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+// One-time codes for email verification (and future password reset).
+// purpose: EMAIL_VERIFY | PASSWORD_RESET
+model VerificationToken {
+  id         Int       @id @default(autoincrement())
+  email      String
+  purpose    String    @default("EMAIL_VERIFY")
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, purpose])
+}
+
+// ---------- Human Resources ----------
+// Modelled on the reference instance's hr / hr_attendance / hr_holidays apps,
+// and scoped to the fields that are actually populated there: a 382-strong,
+// mostly expatriate, shift-based workforce identified by documents rather than
+// by email. Bank details, emergency contacts and work phones are empty in the
+// reference, so they are optional here rather than prominent.
+//
+// The Kuwait HR workflows -- custody, clearance, leave encashment, loans -- are
+// deliberately NOT modelled yet. The identity-document fields they will read
+// live on Employee already, because the reference keeps them on the employee.
+
+model Department {
+  id        Int           @id @default(autoincrement())
+  name      String
+  nameAr    String?
+  parentId  Int?
+  parent    Department?   @relation("DeptTree", fields: [parentId], references: [id])
+  children  Department[]  @relation("DeptTree")
+  /// Department head. Nullable -- the reference leaves almost all of these unset.
+  managerId Int?
+  manager   Employee?     @relation("DeptManager", fields: [managerId], references: [id])
+  employees Employee[]    @relation("EmployeeDept")
+  jobs      JobPosition[]
+  active    Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([active])
+}
+
+model JobPosition {
+  id           Int         @id @default(autoincrement())
+  name         String
+  nameAr       String?
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  /// Headcount the position is budgeted for; 0 = not recruiting.
+  expected     Int         @default(0)
+  description  String?
+  employees    Employee[]
+  active       Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([active])
+}
+
+/// Working schedule. The reference names these after the shift window
+/// ("2 PM : 11 PM", "11 PM : 10 AM"), and several of them cross midnight --
+/// which is why attendance is attributed to the check-in date, not the clock date.
+model WorkSchedule {
+  id           Int        @id @default(autoincrement())
+  name         String
+  hoursPerDay  Decimal    @default(9)
+  hoursPerWeek Decimal    @default(63)
+  /// Local shift bounds as "HH:MM". endTime <= startTime means it crosses midnight.
+  startTime    String?
+  endTime      String?
+  /// Weekday numbers (0 = Sunday ... 6 = Saturday) NOT worked, comma-separated.
+  /// Empty means a 7-day week, which is how the reference's calendars are set up.
+  restDays     String     @default("")
+  timezone     String     @default("Asia/Kuwait")
+  active       Boolean    @default(true)
+  employees    Employee[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Employee {
+  id     Int     @id @default(autoincrement())
+  /// "Employee ID" in the reference (hr.employee.employee_number) — the number
+  /// on the badge, shown as a pill on the kanban card. Not the database id.
+  ref    String?
+  name   String
+  nameAr String?
+  active Boolean @default(true)
+
+  /// WORKING | ON_PROBATION | ON_LEAVE | ON_NOTICE | SEVERANCE | TERMINATED
+  /// Set by HR, exactly as the reference's employee_status. Distinct from
+  /// "off today", which is derived from approved leave.
+  status String @default("WORKING")
+
+  /// EMPLOYEE | WORKER | STUDENT | TRAINEE | CONTRACTOR | FREELANCE
+  employeeType String @default("EMPLOYEE")
+
+  /// Free text — the reference uses a work_location_id model, but every record
+  /// there is unset, so a lookup table would be scaffolding around nothing.
+  workLocation String?
+
+  tags EmployeeTagLink[]
+
+  departmentId  Int?
+  department    Department?  @relation("EmployeeDept", fields: [departmentId], references: [id])
+  jobPositionId Int?
+  jobPosition   JobPosition? @relation(fields: [jobPositionId], references: [id])
+  /// Free-text title. The reference populates this alongside the job position
+  /// and the two often differ, so both are kept.
+  jobTitle      String?
+  managerId     Int?
+  manager       Employee?    @relation("EmployeeTree", fields: [managerId], references: [id])
+  reports       Employee[]   @relation("EmployeeTree")
+  managedDepts  Department[] @relation("DeptManager")
+
+  workEmail    String?
+  workPhone    String?
+  mobile       String?
+  privatePhone String?
+
+  nationality String?
+  birthday    DateTime?
+  /// MALE | FEMALE
+  gender      String?
+  /// SINGLE | MARRIED | WIDOWED | DIVORCED
+  marital     String?
+
+  /// Kuwait identity documents -- the fields the reference actually fills in
+  /// (Civil ID, passport and work permit are set on ~92% of employees).
+  civilId          String?
+  civilIdExpiry    DateTime?
+  passportNo       String?
+  passportExpiry   DateTime?
+  workPermitNo     String?
+  workPermitExpiry DateTime?
+
+  /// Attendance kiosk credentials. Badge is scanned; PIN is typed.
+  badgeId String? @unique
+  pin     String?
+
+  workScheduleId Int?
+  workSchedule   WorkSchedule? @relation(fields: [workScheduleId], references: [id])
+  hireDate       DateTime?
+  endDate        DateTime?
+  monthlySalary  Decimal       @default(0)
+
+  emergencyContact String?
+  emergencyPhone   String?
+  imageUrl         String?
+  notes            String?
+
+  attendances Attendance[]
+  leaves      LeaveRequest[]
+  allocations LeaveAllocation[]
+  /// Till shifts this employee signed in for.
+  posSessions PosSession[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([active])
+  @@index([name])
+  @@index([departmentId])
+  @@index([civilId])
+  @@index([status])
+}
+
+/// Employee tags — the reference has one ("Staff") on every record, but the
+/// model is a many-to-many there and categories multiply once HR starts using them.
+model EmployeeTag {
+  id    Int               @id @default(autoincrement())
+  name  String            @unique
+  color String            @default("slate")
+  links EmployeeTagLink[]
+}
+
+model EmployeeTagLink {
+  employeeId Int
+  tagId      Int
+  employee   Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  tag        EmployeeTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, tagId])
+  @@index([tagId])
+}
+
+/// One row per punch pair. A null `checkOut` means the employee is still in --
+/// which is the normal state for a third of the reference's rows.
+/// source: KIOSK | MANUAL
+model Attendance {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  checkIn     DateTime
+  checkOut    DateTime?
+  /// Cached on check-out so reports never recompute it across thousands of rows.
+  workedHours Decimal   @default(0)
+  source      String    @default("MANUAL")
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([employeeId, checkIn])
+  @@index([checkIn])
+}
+
+/// Leave types follow Kuwait labour law, as in the reference: annual leave is
+/// the only type that draws on an allocation, and sick leave is banded by the
+/// share of salary it pays.
+model LeaveType {
+  id                 Int     @id @default(autoincrement())
+  name               String
+  nameAr             String?
+  code               String? @unique
+  /// Requests draw on an allocation and are refused when the balance is short.
+  requiresAllocation Boolean @default(false)
+  /// Share of salary paid for days taken (100 = full pay, 0 = unpaid).
+  payPercent         Decimal @default(100)
+  /// Statutory cap per year; null = uncapped.
+  maxDaysPerYear     Int?
+  color              String  @default("slate")
+  sequence           Int     @default(10)
+  active             Boolean @default(true)
+
+  requests    LeaveRequest[]
+  allocations LeaveAllocation[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([active])
+}
+
+/// Days granted to an employee for a type in a given year. One row per
+/// employee/type/year keeps the balance arithmetic unambiguous.
+model LeaveAllocation {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  leaveTypeId Int
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+  year        Int
+  days        Decimal
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@index([year])
+}
+
+/// state: DRAFT | TO_APPROVE | APPROVED | REFUSED | CANCELLED
+/// Only APPROVED requests consume allocation balance.
+model LeaveRequest {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  leaveTypeId Int
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+  dateFrom    DateTime
+  dateTo      DateTime
+  /// Days consumed -- proposed from the range minus the employee's rest days,
+  /// then editable, because half days and odd shifts happen.
+  days          Decimal
+  reason        String?
+  state         String    @default("TO_APPROVE")
+  approvedBy    String?
+  approvedAt    DateTime?
+  refusedReason String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([employeeId, dateFrom])
+  @@index([state])
+  @@index([dateFrom])
+}

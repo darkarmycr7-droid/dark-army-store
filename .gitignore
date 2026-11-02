@@ -1,0 +1,44 @@
+# ---- Dark-Army Store: what never goes into git ----
+# The per-folder .gitignore files cover the backend and frontend; this one is the
+# safety net for the whole tree, so a file added at the root can't slip through.
+
+# Dependencies & build output
+node_modules/
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Secrets. Only the .example files are tracked — real ones stay on the machine.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Databases and backups: this is live business data, not source code.
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+backend/prisma/dev.db*
+backend/backups/
+
+# Uploaded files belong to the running install, not to the repo.
+# (backend/prisma/seed-images/ IS tracked — the seed copies those in.)
+backend/uploads/
+
+# Logs & caches
+*.log
+npm-debug.log*
+.npm/
+.eslintcache
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/

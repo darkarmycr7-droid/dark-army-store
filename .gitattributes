@@ -1,0 +1,19 @@
+# Normalise text to LF inside the repository, whatever the checkout OS does.
+# Without this a Windows commit stores CRLF and Linux builds trip over it.
+* text=auto
+
+# Shell scripts must stay LF for Linux containers, even on Windows checkouts
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+
+# .bat files are Windows-only; keep them CRLF so cmd.exe is happy
+*.bat text eol=crlf
+
+# Never let git touch binaries
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.db binary
