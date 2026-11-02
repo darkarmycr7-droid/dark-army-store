@@ -16,9 +16,9 @@ and the storefront is bilingual English / Arabic with full RTL.
 
 | Where | What to try |
 |---|---|
-| [Storefront](https://dark-army-store.onrender.com) | Browse the catalog, add to cart, check out — coupon `WELCOME10` takes 10% off |
-| [Admin](https://dark-army-store.onrender.com/admin/login) | `admin@darkarmy.store` / `admin123` — dashboard, products, orders, inventory, purchasing, accounting, HR |
-| Point of sale | `/pos`, once signed in to the admin — register per branch, cashier PIN, till sessions |
+| [**The ERP**](https://dark-army-store.onrender.com/admin) | Sign in with `admin@darkarmy.store` / `admin123` and you land on the app launcher — 21 modules: sales, purchasing, stock ledger, manufacturing, warehouses, transfers, till sessions, employees, attendance, time off, accounting, audit |
+| [Storefront](https://dark-army-store.onrender.com) | The customer side. Browse, add to cart, check out — coupon `WELCOME10` takes 10% off |
+| [Point of sale](https://dark-army-store.onrender.com/pos) | The till itself, full screen — register per branch, cashier PIN, opening control. Sign in to the ERP first |
 
 Placing an order on the demo really does decrement stock and post the coupon, so
 the admin dashboard moves while you use the shop.
