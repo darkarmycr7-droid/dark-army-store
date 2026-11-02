@@ -1,0 +1,25 @@
+# Build context for Dockerfile.demo, which builds from the repository root.
+# The per-folder .dockerignore files only apply to builds whose context is that
+# folder, so the demo build needs its own list here.
+
+**/node_modules
+**/.next
+**/dist
+**/*.tsbuildinfo
+
+# Never ship local data or secrets into an image
+**/.env
+**/.env.local
+**/*.db
+**/*.db-journal
+backend/prisma/dev.db*
+backend/backups
+backend/uploads
+
+.git
+.github
+.devcontainer
+docs
+nginx
+**/npm-debug.log*
+*.bat

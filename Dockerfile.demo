@@ -1,0 +1,85 @@
+# ---- Dark-Army Store: one-container public demo ----
+#
+# The normal production setup is docker-compose.yml: separate backend, frontend,
+# PostgreSQL and Nginx. This image is for a free single-service host instead,
+# where you get one container, one port and no database service.
+#
+# How it fits in one container:
+#   - Express listens on 127.0.0.1:4000, reachable only from inside.
+#   - Next.js listens on $PORT and is the only thing the internet sees; its
+#     rewrites forward /api and /uploads to the API (see next.config.js).
+#   - The database is SQLite, created AND seeded during the build, then baked
+#     into the image. So the container starts two node processes and nothing
+#     else — no migration, no seeding, no waiting for a database at boot, which
+#     keeps the cold start short on a host that sleeps idle services.
+#
+# Consequence worth knowing: the filesystem is not persistent. Every restart
+# serves the same freshly seeded catalog, and anything a visitor changes is
+# gone. That is what you want from a demo and not what you want from the real
+# thing — for that, use docs/DEPLOY.md.
+
+# ---------- 1. API: compile, then build the seeded database ----------
+FROM node:20-slim AS api
+WORKDIR /api
+
+# Prisma needs OpenSSL on Debian slim
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
+COPY backend/package*.json ./
+RUN npm ci
+
+COPY backend/ ./
+
+# Stays on SQLite: scripts/use-postgres.js is deliberately NOT run here.
+ENV DATABASE_URL=file:/api/prisma/demo.db
+RUN npx prisma generate \
+ && npm run build \
+ && npx prisma db push --skip-generate \
+ && npx tsx prisma/seed.ts
+
+# ---------- 2. Web: Next.js standalone ----------
+FROM node:20-slim AS web
+WORKDIR /web
+
+COPY frontend/package*.json ./
+RUN npm ci
+
+COPY frontend/ ./
+
+# rewrites() is baked in at build time, so the API origin has to be known now.
+# Both processes share the container's network namespace, hence loopback.
+ARG NEXT_PUBLIC_SITE_URL=""
+ENV BACKEND_ORIGIN=http://127.0.0.1:4000 \
+    NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
+    NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# ---------- 3. Runtime ----------
+FROM node:20-slim AS run
+WORKDIR /app
+
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
+COPY --from=api /api ./api
+COPY --from=web /web/.next/standalone ./web
+COPY --from=web /web/.next/static ./web/.next/static
+COPY --from=web /web/public ./web/public
+
+COPY deploy/demo-start.sh ./start.sh
+# A Windows checkout stores CRLF; /bin/sh will not run that.
+RUN sed -i 's/\r$//' ./start.sh && chmod +x ./start.sh
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    HOSTNAME=0.0.0.0 \
+    DATABASE_URL=file:/app/api/prisma/demo.db \
+    STORAGE_DRIVER=local \
+    CURRENCY=KD \
+    PAYMENT_METHODS=COD,STUB \
+    EMAIL_DRIVER=console \
+    REQUIRE_EMAIL_VERIFICATION=false \
+    BACKUP_INTERVAL_HOURS=0 \
+    PORT=10000
+
+EXPOSE 10000
+CMD ["./start.sh"]

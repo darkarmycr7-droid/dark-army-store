@@ -1,0 +1,34 @@
+# Render blueprint for the public demo.
+#
+# On render.com: New → Blueprint → pick this repository. Render reads this file
+# and creates the service; there is nothing to configure by hand.
+#
+# This describes the DEMO only (Dockerfile.demo: one container, seeded SQLite,
+# no persistence). The real deployment — PostgreSQL, Nginx, separate services,
+# persistent uploads — is docker-compose.yml plus docs/DEPLOY.md.
+services:
+  - type: web
+    name: dark-army-store-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.demo
+    dockerContext: .
+    region: frankfurt          # closest Render region to Kuwait
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # A free instance sleeps after 15 minutes idle and loses its filesystem,
+      # so the demo is stateless by design. Anything set here is what the
+      # container starts with every time.
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: "false"         # no mail server on the demo; let visitors sign up
+      - key: EMAIL_DRIVER
+        value: console
+      - key: PAYMENT_METHODS
+        value: COD,STUB
+      - key: FREE_SHIPPING_OVER
+        value: "20"
+      - key: DEFAULT_SHIPPING
+        value: "1.5"
+      - key: STORE_NAME
+        value: Dark-Army Store
