@@ -10,6 +10,29 @@ and the storefront is bilingual English / Arabic with full RTL.
 > Self-contained: own database, own backend, own frontend. SQLite out of the box —
 > clone it and it runs, with no services to provision.
 
+## Live demo
+
+### → **https://dark-army-store.onrender.com**
+
+| Where | What to try |
+|---|---|
+| [Storefront](https://dark-army-store.onrender.com) | Browse the catalog, add to cart, check out — coupon `WELCOME10` takes 10% off |
+| [Admin](https://dark-army-store.onrender.com/admin/login) | `admin@darkarmy.store` / `admin123` — dashboard, products, orders, inventory, purchasing, accounting, HR |
+| Point of sale | `/pos`, once signed in to the admin — register per branch, cashier PIN, till sessions |
+
+Placing an order on the demo really does decrement stock and post the coupon, so
+the admin dashboard moves while you use the shop.
+
+It runs on free hosting, which means **the first request after an idle spell wakes
+the container and can take up to a minute** — open it a couple of minutes before
+you want to show it, and everything after that is instant.
+
+The demo is one container: Express on an internal port, Next.js on the public one,
+and a SQLite database created and seeded *during the image build* (`Dockerfile.demo`),
+so a cold start is two node processes and nothing else. Nothing a visitor does
+survives a restart — by design. The real deployment is a different thing entirely:
+PostgreSQL, Nginx and persistent uploads via `docker-compose.yml` and [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Stack
 - **Frontend:** Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS
 - **Backend:** Node.js, Express, TypeScript, Prisma
@@ -49,9 +72,10 @@ overnight shifts stay on that day.
 - SEO: metadata, sitemap.xml, robots.txt, JSON-LD product schema
 
 ## Admin panel (`/admin`)
-Sign in at **http://localhost:3200/admin/login** with `admin@darkarmy.store` / `admin123`
-— the seeded local account. **Change it in Admin → Settings before the app is reachable
-by anyone but you.** A production build never prefills or displays these.
+Sign in at `/admin/login` — on the [demo](https://dark-army-store.onrender.com/admin/login),
+or `http://localhost:3200/admin/login` locally — with `admin@darkarmy.store` / `admin123`,
+the seeded account. **Change it in Admin → Settings before the app holds anything real.**
+A production build never prefills or displays these.
 - **Dashboard:** revenue, orders, customers, products, inventory value, potential profit, 14-day sales chart, low-stock list, top products, recent orders
 - **Products:** searchable table, create/edit modal with **image upload** (local disk → S3-ready), cost/price/margin, stock + low-stock alert, featured/best-seller/active flags, delete (soft-deletes if referenced by an order)
 - **Orders:** filter by status, search, detail drawer to update status (PENDING→…→DELIVERED), assign a driver, auto-restock on cancel/return, full status history timeline
